@@ -1,0 +1,24 @@
+{
+  "name": "redis-plus-plus",
+  "version-string": "1.2.1",
+  "port-version": 1,
+  "homepage": "https://github.com/sewenew/redis-plus-plus",
+  "description": "This is a C++ client for Redis. It's based on hiredis, and written in C++11 / C++17",
+  "license": "Apache-2.0",
+  "dependencies": [
+    "hiredis"
+  ],
+  "features": {
+    "ssl": {
+      "description": "Build redis++ with SSL support",
+      "dependencies": [
+        {
+          "name": "hiredis",
+          "features": [
+            "ssl"
+          ]
+        }
+      ]
+    }
+  }
+}

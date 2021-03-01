@@ -1,130 +1,160 @@
-if (APPLE)
-    cmake_minimum_required(VERSION 3.0.0)
-else()
-    cmake_minimum_required(VERSION 2.8.0)
-endif()
+cmake_minimum_required(VERSION 3.15)
+project(redis++ VERSION 1.2.1)
 
-set(REDIS_PLUS_PLUS_VERSION "1.2.1")
+include(CTest)
 
-message(STATUS "redis-plus-plus version: ${REDIS_PLUS_PLUS_VERSION}")
+##
+## Project options
+##
 
-if (${CMAKE_VERSION} VERSION_LESS "3.0.0")
-    project(redis++)
-else()
-    cmake_policy(SET CMP0048 NEW)
-    project(redis++ VERSION ${REDIS_PLUS_PLUS_VERSION})
-endif()
+option(redis++_USE_TLS "Build with TLS support" OFF)
+option(redis++_BUILD_TESTING "Build tests for redis++" "${BUILD_TESTING}")
 
-if (NOT DEFINED REDIS_PLUS_PLUS_CXX_STANDARD)
-    set(REDIS_PLUS_PLUS_CXX_STANDARD 11)
-endif()
+##
+## CMake dependencies
+##
 
-message(STATUS "The CXX standard is c++${REDIS_PLUS_PLUS_CXX_STANDARD}")
+set(THREADS_PREFER_PTHREAD_FLAG YES)
 
-if (NOT WIN32)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++${REDIS_PLUS_PLUS_CXX_STANDARD} -Wall -W -Werror")
-endif()
+find_package(Threads REQUIRED)
+find_package(hiredis REQUIRED)
 
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+##
+## Main library build
+##
 
-set(PROJECT_SOURCE_DIR ${PROJECT_SOURCE_DIR}/src/sw/redis++)
+if (NOT DEFINED CMAKE_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD 11)
+endif ()
 
-file(GLOB PROJECT_SOURCE_FILES "${PROJECT_SOURCE_DIR}/*.cpp")
+set(CMAKE_CXX_EXTENSIONS NO)
+set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS YES)
 
-# TLS support
-option(REDIS_PLUS_PLUS_USE_TLS "Build with TLS support" OFF)
+add_library(
+    redis++
+    src/sw/redis++/command.cpp
+    src/sw/redis++/command_options.cpp
+    src/sw/redis++/connection.cpp
+    src/sw/redis++/connection_pool.cpp
+    src/sw/redis++/crc16.cpp
+    src/sw/redis++/errors.cpp
+    src/sw/redis++/pipeline.cpp
+    src/sw/redis++/redis.cpp
+    src/sw/redis++/redis_cluster.cpp
+    src/sw/redis++/reply.cpp
+    src/sw/redis++/sentinel.cpp
+    src/sw/redis++/shards.cpp
+    src/sw/redis++/shards_pool.cpp
+    src/sw/redis++/subscriber.cpp
+    src/sw/redis++/transaction.cpp
+)
+add_library(redis++::redis++ ALIAS redis++)
 
-if (REDIS_PLUS_PLUS_USE_TLS)
-    message(STATUS "Build with TLS support")
+if (redis++_USE_TLS)
+    message(STATUS "Building WITH TLS support")
+    set(tls_headers "${CMAKE_CURRENT_SOURCE_DIR}/src/sw/redis++/tls")
 
-    set(TLS_SUB_DIR "${PROJECT_SOURCE_DIR}/tls")
-else()
-    set(TLS_SUB_DIR "${PROJECT_SOURCE_DIR}/no_tls")
-endif()
+    target_link_libraries(redis++ PUBLIC hiredis::hiredis_ssl)
+    target_sources(redit++ PRIVATE src/sw/redis++/tls/tls.cpp)
+else ()
+    message(STATUS "Building WITHOUT TLS support")
+    set(tls_headers "${CMAKE_CURRENT_SOURCE_DIR}/src/sw/redis++/no_tls")
 
-file(GLOB TLS_SOURCE_FILES "${TLS_SUB_DIR}/*.cpp")
+    target_link_libraries(redis++ PUBLIC hiredis::hiredis)
+endif ()
 
-# hiredis dependency
-find_path(HIREDIS_HEADER hiredis)
-find_library(HIREDIS_LIB hiredis)
+target_compile_features(redis++ PUBLIC cxx_std_${CMAKE_CXX_STANDARD})
+target_compile_definitions(redis++ PRIVATE $<$<PLATFORM_ID:Windows>:NOMINMAX>)
+target_link_libraries(redis++ PUBLIC Threads::Threads)
+target_include_directories(
+    redis++
+    PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+    $<BUILD_INTERFACE:${tls_headers}>
+)
 
-# Build static library
-option(REDIS_PLUS_PLUS_BUILD_STATIC "Build static library" ON)
+set_target_properties(
+    redis++
+    PROPERTIES
+    VERSION "${redis++_VERSION}"
+    SOVERSION "${redis++_VERSION_MAJOR}"
+)
 
-if (REDIS_PLUS_PLUS_BUILD_STATIC)
-    set(STATIC_LIB redis-plus-plus-static)
+##
+## Testing
+##
 
-    add_library(${STATIC_LIB} STATIC ${PROJECT_SOURCE_FILES} ${TLS_SOURCE_FILES})
-
-    target_include_directories(${STATIC_LIB} PUBLIC ${PROJECT_SOURCE_DIR} ${TLS_SUB_DIR})
-    target_include_directories(${STATIC_LIB} PUBLIC ${HIREDIS_HEADER})
-
-    if (WIN32)
-        target_compile_definitions(${STATIC_LIB} PRIVATE NOMINMAX)
-        set_target_properties(${STATIC_LIB} PROPERTIES CXX_STANDARD ${REDIS_PLUS_PLUS_CXX_STANDARD} CXX_EXTENSIONS OFF)
-        set_target_properties(${STATIC_LIB} PROPERTIES OUTPUT_NAME ${PROJECT_NAME}_static)
-    else()
-        set_target_properties(${STATIC_LIB} PROPERTIES OUTPUT_NAME ${PROJECT_NAME})
-    endif()
-
-    set_target_properties(${STATIC_LIB} PROPERTIES CLEAN_DIRECT_OUTPUT 1)
-    set_target_properties(${STATIC_LIB} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-endif()
-
-# Build shared library
-option(REDIS_PLUS_PLUS_BUILD_SHARED "Build shared library" ON)
-
-if (REDIS_PLUS_PLUS_BUILD_SHARED)
-    set(SHARED_LIB redis-plus-plus-shared)
-
-    add_library(${SHARED_LIB} SHARED ${PROJECT_SOURCE_FILES} ${TLS_SOURCE_FILES})
-
-    target_include_directories(${SHARED_LIB} PUBLIC ${PROJECT_SOURCE_DIR} ${TLS_SUB_DIR})
-    target_include_directories(${SHARED_LIB} PUBLIC ${HIREDIS_HEADER})
-
-    if (WIN32)
-        target_compile_definitions(${SHARED_LIB} PRIVATE NOMINMAX)
-        set_target_properties(${SHARED_LIB} PROPERTIES CXX_STANDARD ${REDIS_PLUS_PLUS_CXX_STANDARD} CXX_EXTENSIONS OFF)
-        set_target_properties(${SHARED_LIB} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS TRUE)
-    endif()
-
-    target_link_libraries(${SHARED_LIB} ${HIREDIS_LIB})
-
-    if (REDIS_PLUS_PLUS_USE_TLS)
-        find_library(HIREDIS_TLS_LIB hiredis_ssl)
-        target_link_libraries(${SHARED_LIB} ${HIREDIS_TLS_LIB})
-    endif()
-
-    set_target_properties(${SHARED_LIB} PROPERTIES OUTPUT_NAME ${PROJECT_NAME})
-    set_target_properties(${SHARED_LIB} PROPERTIES CLEAN_DIRECT_OUTPUT 1)
-    set_target_properties(${SHARED_LIB} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-endif()
-
-option(REDIS_PLUS_PLUS_BUILD_TEST "Build tests for redis++" ON)
-
-if (REDIS_PLUS_PLUS_BUILD_TEST)
+if (redis++_BUILD_TESTING)
+    set(CMAKE_DISABLE_FIND_PACKAGE_redis++ YES)
     add_subdirectory(test)
-endif()
+endif ()
 
-# Install static lib.
-if (REDIS_PLUS_PLUS_BUILD_STATIC)
-    install(TARGETS ${STATIC_LIB}
-            ARCHIVE DESTINATION lib)
-endif()
+##
+## Installation
+##
 
-# Install shared lib.
-if (REDIS_PLUS_PLUS_BUILD_SHARED)
-    if (WIN32)
-        install(TARGETS ${SHARED_LIB}
-                RUNTIME DESTINATION bin
-                ARCHIVE DESTINATION lib)
-    else()
-        install(TARGETS ${SHARED_LIB}
-                LIBRARY DESTINATION lib)
-    endif()
-endif()
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
-# Install headers.
-set(HEADER_PATH "sw/redis++")
-file(GLOB HEADERS "${PROJECT_SOURCE_DIR}/*.h*" "${TLS_SUB_DIR}/*.h")
-install(FILES ${HEADERS} DESTINATION ${CMAKE_INSTALL_PREFIX}/include/${HEADER_PATH})
+## Custom locations
+
+set(redis++_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/redis++"
+    CACHE STRING "Path to redis++ CMake files")
+
+## Type-specific targets
+
+if (BUILD_SHARED_LIBS)
+    set(type shared)
+else ()
+    set(type static)
+endif ()
+
+install(
+    TARGETS redis++ EXPORT redis++-libs
+    RUNTIME COMPONENT redis++-runtime
+    LIBRARY COMPONENT redis++-runtime
+    NAMELINK_COMPONENT redis++-development
+    ARCHIVE COMPONENT redis++-development
+    INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+)
+
+install(
+    EXPORT redis++-libs
+    DESTINATION "${redis++_INSTALL_CMAKEDIR}"
+    NAMESPACE redis++::
+    FILE redis++-${type}-targets.cmake
+    COMPONENT redis++-development
+)
+
+write_basic_package_version_file(
+    redis++-config-version.cmake
+    COMPATIBILITY SameMajorVersion
+)
+
+install(
+    FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/redis++-config.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/redis++-config-version.cmake"
+    DESTINATION "${redis++_INSTALL_CMAKEDIR}"
+    COMPONENT redis++-development
+)
+
+## Headers
+
+install(
+    DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/sw"
+    TYPE INCLUDE
+    COMPONENT redis++-development
+    FILES_MATCHING
+    PATTERN "*/tls" EXCLUDE
+    PATTERN "*/no_tls" EXCLUDE
+    PATTERN "*.h"
+    PATTERN "*.hpp"
+)
+
+install(
+    DIRECTORY "${tls_headers}/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/sw/redis++"
+    COMPONENT redis++-development
+    FILES_MATCHING PATTERN "*.h"
+)

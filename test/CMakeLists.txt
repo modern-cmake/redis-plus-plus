@@ -1,49 +1,24 @@
+cmake_minimum_required(VERSION 3.15)
 project(test_redis++)
 
-if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-    cmake_minimum_required(VERSION 3.0.0)
-else()
-    cmake_minimum_required(VERSION 2.8.0)
-endif()
+enable_testing()
 
-set(PROJECT_SOURCE_DIR ${PROJECT_SOURCE_DIR}/src/sw/redis++)
+# Normally this would be REQUIRED, but CMAKE_DISABLE_FIND_PACKAGE_<name>
+# does not apply to "REQUIRED" find_package calls and we need to disable
+# this from the parent project.
+find_package(redis++)
 
-file(GLOB PROJECT_SOURCE_FILES "${PROJECT_SOURCE_DIR}/*.cpp")
+add_executable(test_redis++ src/sw/redis++/test_main.cpp)
+target_link_libraries(
+    test_redis++
+    PRIVATE
+    redis++::redis++
+    $<$<PLATFORM_ID:Solaris,SunOS>:socket>
+    $<$<PLATFORM_ID:Windows>:ws2_32>
+)
 
-add_executable(${PROJECT_NAME} ${PROJECT_SOURCE_FILES})
+add_test(
+    NAME test_redis++
+    COMMAND test_redis++ -h 127.0.0.1 -p 6379
+)
 
-# hiredis dependency
-find_path(HIREDIS_HEADER hiredis)
-target_include_directories(${PROJECT_NAME} PUBLIC ${HIREDIS_HEADER})
-
-find_library(HIREDIS_STATIC_LIB libhiredis.a)
-target_link_libraries(${PROJECT_NAME} ${HIREDIS_STATIC_LIB})
-
-if (REDIS_PLUS_PLUS_USE_TLS)
-    find_package(OpenSSL REQUIRED)
-    find_library(HIREDIS_TLS_STATIC_LIB libhiredis_ssl.a)
-    target_link_libraries(${PROJECT_NAME} ${HIREDIS_TLS_STATIC_LIB} ${OPENSSL_LIBRARIES})
-endif()
-
-# redis++ dependency
-target_include_directories(${PROJECT_NAME} PUBLIC ../src)
-
-# solaris socket dependency
-if (CMAKE_SYSTEM_NAME MATCHES "(Solaris|SunOS)")
-    target_link_libraries(${PROJECT_NAME} -lsocket)
-endif(CMAKE_SYSTEM_NAME MATCHES "(Solaris|SunOS)")
-
-# Windows socket dependency
-if (WIN32)
-    target_link_libraries(${PROJECT_NAME} ws2_32)
-endif()
-
-find_package(Threads REQUIRED)
-
-if (REDIS_PLUS_PLUS_BUILD_STATIC)
-    set(REDIS_PLUS_PLUS_LIB redis-plus-plus-static)
-else()
-    set(REDIS_PLUS_PLUS_LIB redis-plus-plus-shared)
-endif()
-
-target_link_libraries(${PROJECT_NAME} ${REDIS_PLUS_PLUS_LIB} ${CMAKE_THREAD_LIBS_INIT})
